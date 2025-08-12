@@ -10,8 +10,8 @@
     "build": "npm --workspace web run build",
     "start": "node server/index.js",
     "dev": "node server/index.js",
-    "test:claude": "node scripts/claude-mcp-bolk.js",
-    "test:openai": "node scripts/openai-mcp-bolk.mjs",
+    "test:claude": "node scripts/claude-mcp-test.js",
+    "test:openai": "node scripts/openai-mcp-test.mjs",
     "test:mcp": "node scripts/mcp-ping.mjs"
   },
   "dependencies": {

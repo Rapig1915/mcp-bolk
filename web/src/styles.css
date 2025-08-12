@@ -1,4 +1,2 @@
 * { box-sizing: border-box; }
-body { margin: 0; background: #fff; color: #111; }
-input, button { padding: 6px 8px; font-size: 14px; }
-button { cursor: pointer; } 
+body { margin: 0; } 

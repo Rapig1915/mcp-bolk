@@ -90,7 +90,8 @@ async function run() {
     const tools = toOpenAITools(mcpTools);
 
     const messages = [
-      { role: 'user', content: 'Store value 11 with description "openai test", then sum between 1970-01-01T00:00:00Z and 2100-01-01T00:00:00Z.' }
+      // { role: 'user', content: 'Store value 11 with description "openai test", then sum between 1970-01-01T00:00:00Z and 2100-01-01T00:00:00Z.' },
+      { role: 'user', content: 'Store your favorite integrate value with your favorite pet name. Then give me the sum of all values for the last 7 days. Current time is ' + new Date().toISOString() }
     ];
 
     let guard = 0;

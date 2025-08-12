@@ -95,69 +95,113 @@ export default function App() {
   }, [])
 
   return (
-    <div style={{ maxWidth: 900, margin: '20px auto', fontFamily: 'system-ui, sans-serif' }}>
-      <h2>MCP SQLite Store/Sum</h2>
+    <div className="container py-4">
+      <h2 className="h3 mb-3">MCP SQLite Store/Sum</h2>
 
-      <section style={{ marginTop: 12, padding: 12, border: '1px solid #ddd', borderRadius: 8 }}>
-        <h3>Store tool</h3>
-        <form onSubmit={doStore} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <input type="number" placeholder="value (int)" value={storeValue} onChange={(e) => setStoreValue(e.target.value)} />
-          <input type="text" placeholder="description" value={storeDesc} onChange={(e) => setStoreDesc(e.target.value)} style={{ flex: 1, minWidth: 220 }} />
-          <button type="submit">Store</button>
-        </form>
-        {storeResult && (
-          <pre style={{ background: '#f7f7f7', padding: 8, borderRadius: 6, whiteSpace: 'pre-wrap' }}>{JSON.stringify(storeResult, null, 2)}</pre>
-        )}
+      <section className="card mb-3">
+        <div className="card-body">
+          <h3 className="h5 card-title mb-3">Store tool</h3>
+          <form onSubmit={doStore} className="d-flex flex-wrap gap-2 align-items-center">
+            <input
+              type="number"
+              placeholder="value (int)"
+              value={storeValue}
+              onChange={(e) => setStoreValue(e.target.value)}
+              className="form-control"
+              style={{ width: '140px' }}
+            />
+            <input
+              type="text"
+              placeholder="description"
+              value={storeDesc}
+              onChange={(e) => setStoreDesc(e.target.value)}
+              className="form-control flex-grow-1"
+              style={{ minWidth: '220px' }}
+            />
+            <button type="submit" className="btn btn-primary">Store</button>
+          </form>
+          {storeResult && (
+            <pre className="bg-body-secondary p-3 rounded mt-3 mb-0 small" style={{ whiteSpace: 'pre-wrap' }}>
+              {JSON.stringify(storeResult, null, 2)}
+            </pre>
+          )}
+        </div>
       </section>
 
-      <section style={{ marginTop: 12, padding: 12, border: '1px solid #ddd', borderRadius: 8 }}>
-        <h3>Sum tool</h3>
-        <form onSubmit={doSum} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <input type="text" placeholder="from (ISO)" value={sumFrom} onChange={(e) => setSumFrom(e.target.value)} style={{ minWidth: 260 }} />
-          <input type="text" placeholder="to (ISO)" value={sumTo} onChange={(e) => setSumTo(e.target.value)} style={{ minWidth: 260 }} />
-          <button type="submit">Sum</button>
-        </form>
-        {sumResult && (
-          <pre style={{ background: '#f7f7f7', padding: 8, borderRadius: 6, whiteSpace: 'pre-wrap' }}>{JSON.stringify(sumResult, null, 2)}</pre>
-        )}
+      <section className="card mb-3">
+        <div className="card-body">
+          <h3 className="h5 card-title mb-3">Sum tool</h3>
+          <form onSubmit={doSum} className="d-flex flex-wrap gap-2 align-items-center">
+            <input
+              type="text"
+              placeholder="from (ISO)"
+              value={sumFrom}
+              onChange={(e) => setSumFrom(e.target.value)}
+              className="form-control"
+              style={{ minWidth: '260px' }}
+            />
+            <input
+              type="text"
+              placeholder="to (ISO)"
+              value={sumTo}
+              onChange={(e) => setSumTo(e.target.value)}
+              className="form-control"
+              style={{ minWidth: '260px' }}
+            />
+            <button type="submit" className="btn btn-primary">Sum</button>
+          </form>
+          {sumResult && (
+            <pre className="bg-body-secondary p-3 rounded mt-3 mb-0 small" style={{ whiteSpace: 'pre-wrap' }}>
+              {JSON.stringify(sumResult, null, 2)}
+            </pre>
+          )}
+        </div>
       </section>
 
-      <section style={{ marginTop: 12, padding: 12, border: '1px solid #ddd', borderRadius: 8 }}>
-        <h3>Entries</h3>
-        {loading ? <div>Loading...</div> : (
-          <>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6 }}>ID</th>
-                  <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6 }}>Value</th>
-                  <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6 }}>Description</th>
-                  <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6 }}>Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.items.map((it) => (
-                  <tr key={it.id}>
-                    <td style={{ padding: 6, borderBottom: '1px solid #f0f0f0' }}>{it.id}</td>
-                    <td style={{ padding: 6, borderBottom: '1px solid #f0f0f0' }}>{it.value}</td>
-                    <td style={{ padding: 6, borderBottom: '1px solid #f0f0f0' }}>{it.description}</td>
-                    <td style={{ padding: 6, borderBottom: '1px solid #f0f0f0' }}>{new Date(it.created_at).toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
-              <button onClick={() => goto(1)} disabled={page <= 1}>First</button>
-              <button onClick={() => goto(page - 1)} disabled={page <= 1}>Prev</button>
-              <span>Page {data.page} / {pages}</span>
-              <button onClick={() => goto(page + 1)} disabled={page >= pages}>Next</button>
-              <button onClick={() => goto(pages)} disabled={page >= pages}>Last</button>
-            </div>
-          </>
-        )}
+      <section className="card mb-3">
+        <div className="card-body">
+          <h3 className="h5 card-title">Entries</h3>
+          {loading ? (
+            <div className="text-body-secondary">Loading...</div>
+          ) : (
+            <>
+              <div className="table-responsive mt-2">
+                <table className="table table-striped table-hover align-middle">
+                  <thead>
+                    <tr>
+                      <th scope="col" className="text-start">ID</th>
+                      <th scope="col" className="text-start">Value</th>
+                      <th scope="col" className="text-start">Description</th>
+                      <th scope="col" className="text-start">Created</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.items.map((it) => (
+                      <tr key={it.id}>
+                        <td className="py-2">{it.id}</td>
+                        <td className="py-2">{it.value}</td>
+                        <td className="py-2">{it.description}</td>
+                        <td className="py-2">{new Date(it.created_at).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="d-flex align-items-center gap-2 mt-2">
+                <div className="btn-group" role="group" aria-label="Pagination">
+                  <button onClick={() => goto(1)} disabled={page <= 1} className="btn btn-outline-light btn-sm">First</button>
+                  <button onClick={() => goto(page - 1)} disabled={page <= 1} className="btn btn-outline-light btn-sm">Prev</button>
+                  <button onClick={() => goto(page + 1)} disabled={page >= pages} className="btn btn-outline-light btn-sm">Next</button>
+                  <button onClick={() => goto(pages)} disabled={page >= pages} className="btn btn-outline-light btn-sm">Last</button>
+                </div>
+                <span className="ms-2 small">Page {data.page} / {pages}</span>
+              </div>
+            </>
+          )}
+        </div>
       </section>
 
-      <p style={{ marginTop: 20, color: '#666' }}>
+      <p className="text-secondary mt-3">
         MCP SSE URL to test with Inspector: <code>http://localhost:4444/sse</code>
       </p>
     </div>
