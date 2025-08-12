@@ -1,0 +1,23 @@
+{
+  "name": "mcp-test",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "build": "npm --workspace web run build",
+    "start": "node server/index.js",
+    "dev": "node server/index.js",
+    "test:claude": "node scripts/claude-mcp-test.js",
+    "test:openai": "node scripts/openai-mcp-test.mjs",
+    "test:mcp": "node scripts/mcp-ping.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.28.0",
+    "@modelcontextprotocol/sdk": "^1.10.0",
+    "dotenv": "^17.2.1",
+    "openai": "^4.57.0"
+  }
+}

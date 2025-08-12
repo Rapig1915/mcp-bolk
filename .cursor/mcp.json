@@ -1,0 +1,8 @@
+{
+    "mcpServers": {
+      "sqlite-demo": {
+        "url": "http://localhost:4444/sse",
+        "enabled": true
+      }
+    }
+  }

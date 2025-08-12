@@ -1,0 +1,17 @@
+{
+  "name": "mcp-local-server",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.10.0",
+    "better-sqlite3": "^9.4.5",
+    "cors": "^2.8.5",
+    "express": "^4.19.2"
+  }
+} 

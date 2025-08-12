@@ -1,0 +1,34 @@
+# Node
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build outputs
+/dist/
+web/dist/
+.vite/
+web/.vite/
+.cache/
+.tmp/
+
+# Env
+.env
+.env.*
+.env.*.local
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# SQLite databases
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Coverage
+coverage/ 
