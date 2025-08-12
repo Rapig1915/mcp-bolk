@@ -36,6 +36,10 @@ export default function App() {
   const [sumTo, setSumTo] = useState('')
   const [sumResult, setSumResult] = useState(null)
 
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const [chatMessages, setChatMessages] = useState([])
+
   const pages = useMemo(() => data.pages || 1, [data.pages])
 
   const doStore = async (e) => {
@@ -86,6 +90,33 @@ export default function App() {
     await load(clamped)
   }
 
+  const sendChat = async (e) => {
+    e?.preventDefault()
+    const content = chatInput.trim()
+    if (!content) return
+    setChatLoading(true)
+    const next = [...chatMessages, { role: 'user', content }]
+    setChatMessages(next)
+    setChatInput('')
+    try {
+      const r = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: next })
+      })
+      const j = await r.json()
+      if (j?.role === 'assistant') {
+        setChatMessages([...next, { role: 'assistant', content: j.content || '' }])
+      } else if (j?.error) {
+        setChatMessages([...next, { role: 'assistant', content: `Error: ${j.error}` }])
+      }
+    } catch (err) {
+      setChatMessages([...next, { role: 'assistant', content: `Request failed: ${String(err)}` }])
+    } finally {
+      setChatLoading(false)
+    }
+  }
+
   useEffect(() => {
     // initialize default date range to last 24h
     const now = new Date()
@@ -97,6 +128,35 @@ export default function App() {
   return (
     <div className="container py-4">
       <h2 className="h3 mb-3">MCP SQLite Store/Sum</h2>
+
+      <section className="card mb-3">
+        <div className="card-body">
+          <h3 className="h5 card-title mb-3">Chat</h3>
+          <form onSubmit={sendChat} className="d-flex flex-wrap gap-2 align-items-center mb-2">
+            <input
+              type="text"
+              placeholder="Ask with tools..."
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              className="form-control flex-grow-1"
+            />
+            <button type="submit" className="btn btn-primary" disabled={chatLoading}>
+              {chatLoading ? 'Sending...' : 'Send'}
+            </button>
+          </form>
+          <div className="bg-body-secondary p-3 rounded small" style={{ whiteSpace: 'pre-wrap', minHeight: '80px' }}>
+            {chatMessages.length === 0 ? (
+              <span className="text-body-secondary">No messages yet</span>
+            ) : (
+              chatMessages.map((m, i) => (
+                <div key={i} className="mb-2">
+                  <strong>{m.role}:</strong> {m.content}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </section>
 
       <section className="card mb-3">
         <div className="card-body">

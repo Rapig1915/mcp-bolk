@@ -6,12 +6,83 @@ import { fileURLToPath } from 'url';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import dotenv from 'dotenv';
+import OpenAI from 'openai';
+import { Client as MCPClient } from '@modelcontextprotocol/sdk/client/index.js';
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { ListToolsResultSchema, CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
+
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 4444;
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'data.sqlite');
+
+// Provider/model configuration for OpenAI/OpenRouter
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const PROVIDER_ENV = process.env.LLM_PROVIDER;
+const PROVIDER = PROVIDER_ENV || (OPENROUTER_API_KEY ? 'openrouter' : (OPENAI_API_KEY ? 'openai' : ''));
+const DEFAULT_MODEL = process.env.OPENAI_MODEL || (PROVIDER === 'openrouter' ? 'openai/gpt-4o-mini' : 'gpt-4o-mini');
+
+function createOpenAIClient() {
+  if (PROVIDER === 'openrouter') {
+    if (!OPENROUTER_API_KEY) throw new Error('Missing OPENROUTER_API_KEY');
+    const referer = process.env.OPENROUTER_SITE || 'http://localhost';
+    const title = process.env.OPENROUTER_APP || 'MCP Test';
+    return new OpenAI({
+      apiKey: OPENROUTER_API_KEY,
+      baseURL: 'https://openrouter.ai/api/v1',
+      defaultHeaders: {
+        'HTTP-Referer': referer,
+        'X-Title': title,
+      },
+    });
+  }
+  if (!OPENAI_API_KEY) throw new Error('Missing OPENAI_API_KEY');
+  return new OpenAI({ apiKey: OPENAI_API_KEY });
+}
+
+function toOpenAITools(mcpTools) {
+  return (mcpTools || []).map((t) => ({
+    type: 'function',
+    function: {
+      name: t.name,
+      description: t.description || '',
+      parameters: t.inputSchema || { type: 'object' },
+    },
+  }));
+}
+
+async function connectMcpClient(sseUrl) {
+  const url = new URL(sseUrl);
+  const authToken = process.env.MCP_AUTH_TOKEN;
+  // If MCP_AUTH_TOKEN is set, pass it via query for compatibility
+  if (authToken && !url.searchParams.has('token')) {
+    url.searchParams.set('token', authToken);
+  }
+  const transport = new SSEClientTransport(url);
+  const client = new MCPClient({ name: 'mcp-openai-backend', version: '1.0.0' });
+  await client.connect(transport);
+  return { client, transport };
+}
+
+async function listMcpTools(mcp) {
+  const res = await mcp.request({ method: 'tools/list', params: {} }, ListToolsResultSchema);
+  return res.tools || [];
+}
+
+async function callMcpTool(mcp, name, args) {
+  const res = await mcp.request({ method: 'tools/call', params: { name, arguments: args || {} } }, CallToolResultSchema);
+  let text = '';
+  for (const c of res.content || []) {
+    if (c.type === 'text' && c.text) text += c.text + '\n';
+  }
+  if (!text) text = JSON.stringify(res);
+  return { isError: !!res.isError, text: text.trim() };
+}
 
 // Initialize DB
 const db = new Database(DB_PATH);
@@ -79,6 +150,84 @@ app.get('/api/tools/sum', (req, res) => {
   }
   const total = sumEntries({ from: String(from), to: String(to) });
   res.json({ total });
+});
+
+// Chat endpoint using OpenAI tool-calling against MCP
+app.post('/api/chat', async (req, res) => {
+  try {
+    const body = req.body || {};
+    let { message, messages } = body;
+
+    if (!messages && typeof message === 'string' && message.trim()) {
+      messages = [{ role: 'user', content: message.trim() }];
+    }
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ error: 'Provide `message` or non-empty `messages` array.' });
+    }
+
+    const model = DEFAULT_MODEL;
+    const openai = createOpenAIClient();
+
+    // Determine MCP SSE URL: default to local server unless overridden
+    const sseUrl = process.env.MCP_SSE_URL || `http://127.0.0.1:${PORT}/sse`;
+    const { client: mcp } = await connectMcpClient(sseUrl);
+
+    try {
+      const mcpTools = await listMcpTools(mcp);
+      if (!mcpTools.length) {
+        return res.status(500).json({ error: 'No MCP tools available' });
+      }
+      const tools = toOpenAITools(mcpTools);
+
+      let guard = 0;
+      let completion = await openai.chat.completions.create({
+        model,
+        messages,
+        tools,
+        tool_choice: 'auto',
+      });
+
+      const toolLogs = [];
+
+      while (guard < 5) {
+        guard++;
+        const msg = completion.choices?.[0]?.message;
+        if (!msg) break;
+
+        const toolCalls = msg.tool_calls || [];
+        if (!toolCalls.length) {
+          const finalText = msg.content || '';
+          return res.json({ role: 'assistant', content: finalText, model, toolLogs });
+        }
+
+        const toolMessages = [];
+        for (const tc of toolCalls) {
+          const name = tc.function?.name;
+          const args = tc.function?.arguments ? JSON.parse(tc.function.arguments) : {};
+          const { text } = await callMcpTool(mcp, name, args);
+          toolLogs.push({ name, args, output: text });
+          toolMessages.push({ role: 'tool', content: text, tool_call_id: tc.id });
+        }
+
+        messages.push({ role: 'assistant', content: msg.content || '', tool_calls: msg.tool_calls });
+        messages.push(...toolMessages);
+
+        completion = await openai.chat.completions.create({
+          model,
+          messages,
+          tools,
+          tool_choice: 'auto',
+        });
+      }
+
+      return res.json({ role: 'assistant', content: '(stopped after max tool iterations)', model, toolLogs });
+    } finally {
+      await mcp.close();
+    }
+  } catch (e) {
+    console.error('Chat error:', e?.response?.data || e);
+    return res.status(500).json({ error: 'chat_failed', detail: e?.response?.data || String(e) });
+  }
 });
 
 // MCP server via SSE
@@ -157,6 +306,17 @@ app.post(POST_ENDPOINT, async (req, res) => {
 });
 
 app.get('/sse', async (req, res) => {
+  // Optional auth: require token via header or query when MCP_AUTH_TOKEN is set
+  const requiredToken = process.env.MCP_AUTH_TOKEN;
+  if (requiredToken) {
+    const authHeader = req.headers['authorization'] || '';
+    const queryToken = req.query.token;
+    const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    if (bearer !== requiredToken && queryToken !== requiredToken) {
+      return res.status(401).send('Unauthorized');
+    }
+  }
+
   const transport = new SSEServerTransport(POST_ENDPOINT, res);
   transports.set(transport.sessionId, transport);
   res.on('close', () => {
