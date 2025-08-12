@@ -14,7 +14,7 @@ A minimal MCP server (SSE transport) with SQLite storage and a small React UI.
 
 ## Install
 ```bash
-cd /mnt/WORK/Project/MegaVX/mcp-test
+cd /mnt/WORK/Project/MegaVX/mcp-bolk
 npm install
 npm --workspace server install
 npm --workspace web install
@@ -98,7 +98,7 @@ If Cursor supports a JSON-based MCP config, it will be similar to:
 
 ## Project Structure
 ```
-/mcp-test
+/mcp-bolk
   package.json
   server/
     package.json
@@ -130,7 +130,7 @@ kill -9 <PID>     # force if still running
 ```
 - Or kill by script path:
 ```bash
-pkill -f '/mnt/WORK/Project/MegaVX/mcp-test/server/index.js'
+pkill -f '/mnt/WORK/Project/MegaVX/mcp-bolk/server/index.js'
 ```
 - Or kill by port (requires `psmisc`):
 ```bash
@@ -147,7 +147,7 @@ lsof -nP -iTCP:4444 -sTCP:LISTEN || echo 'Port 4444 free'
 
 1. Install dependencies
 ```bash
-cd /mnt/WORK/Project/MegaVX/mcp-test
+cd /mnt/WORK/Project/MegaVX/mcp-bolk
 npm install
 npm --workspace server install
 npm --workspace web install

@@ -17,7 +17,7 @@ if (!ANTHROPIC_API_KEY) {
 
 async function connectMcp(sseUrl) {
   const transport = new SSEClientTransport(new URL(sseUrl));
-  const client = new MCPClient({ name: 'mcp-test-client', version: '1.0.0' });
+  const client = new MCPClient({ name: 'mcp-bolk-client', version: '1.0.0' });
   await client.connect(transport);
   return { client, transport };
 }
