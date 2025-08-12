@@ -11,6 +11,9 @@ import OpenAI from 'openai';
 import { Client as MCPClient } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { ListToolsResultSchema, CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
+import { generateText, streamText, tool as aiTool } from 'ai';
+import { openai as aiOpenAI, createOpenAI as createAiOpenAI } from '@ai-sdk/openai';
+import { z } from 'zod';
 
 dotenv.config();
 
@@ -45,6 +48,26 @@ function createOpenAIClient() {
   return new OpenAI({ apiKey: OPENAI_API_KEY });
 }
 
+function getAiModel(modelName) {
+  if (PROVIDER === 'openrouter') {
+    if (!OPENROUTER_API_KEY) throw new Error('Missing OPENROUTER_API_KEY');
+    const referer = process.env.OPENROUTER_SITE || 'http://localhost';
+    const title = process.env.OPENROUTER_APP || 'MCP Test';
+    const openrouter = createAiOpenAI({
+      apiKey: OPENROUTER_API_KEY,
+      baseURL: 'https://openrouter.ai/api/v1',
+      headers: {
+        'HTTP-Referer': referer,
+        'X-Title': title,
+      },
+    });
+    return openrouter(modelName);
+  }
+  if (!OPENAI_API_KEY) throw new Error('Missing OPENAI_API_KEY');
+  // Default OpenAI provider uses env OPENAI_API_KEY
+  return aiOpenAI(modelName);
+}
+
 function toOpenAITools(mcpTools) {
   return (mcpTools || []).map((t) => ({
     type: 'function',
@@ -54,6 +77,33 @@ function toOpenAITools(mcpTools) {
       parameters: t.inputSchema || { type: 'object' },
     },
   }));
+}
+
+function jsonSchemaToZod(schema) {
+  if (!schema || typeof schema !== 'object') return z.object({});
+  if (schema.type === 'object') {
+    const shape = {};
+    const required = new Set(Array.isArray(schema.required) ? schema.required : []);
+    const props = schema.properties || {};
+    for (const [key, def] of Object.entries(props)) {
+      let zodType = z.any();
+      if (def && typeof def === 'object') {
+        if (def.type === 'string') zodType = z.string();
+        else if (def.type === 'integer' || def.type === 'number') zodType = z.number().refine((v) => Number.isFinite(v), 'must be a number');
+        else if (def.type === 'boolean') zodType = z.boolean();
+        else if (def.type === 'array' && def.items && def.items.type === 'string') zodType = z.array(z.string());
+        else if (def.type === 'array' && def.items && def.items.type === 'number') zodType = z.array(z.number());
+        else if (def.type === 'object') zodType = jsonSchemaToZod(def);
+      }
+      if (!required.has(key)) {
+        zodType = zodType.optional();
+      }
+      shape[key] = zodType;
+    }
+    return z.object(shape);
+  }
+  // Fallback
+  return z.object({});
 }
 
 async function connectMcpClient(sseUrl) {
@@ -152,7 +202,7 @@ app.get('/api/tools/sum', (req, res) => {
   res.json({ total });
 });
 
-// Chat endpoint using OpenAI tool-calling against MCP
+// Chat endpoint using OpenAI tool-calling against MCP (baseline, explicit loop)
 app.post('/api/chat', async (req, res) => {
   try {
     const body = req.body || {};
@@ -227,6 +277,150 @@ app.post('/api/chat', async (req, res) => {
   } catch (e) {
     console.error('Chat error:', e?.response?.data || e);
     return res.status(500).json({ error: 'chat_failed', detail: e?.response?.data || String(e) });
+  }
+});
+
+// Chat endpoint using Vercel AI SDK (non-stream by default, optional streaming)
+app.post('/api/chat-ai', async (req, res) => {
+  const doStream = String(req.query.stream || '').toLowerCase() === '1' || req.headers['x-stream'] === '1';
+  try {
+    const body = req.body || {};
+    let { message, messages } = body;
+    if (!messages && typeof message === 'string' && message.trim()) {
+      messages = [{ role: 'user', content: message.trim() }];
+    }
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ error: 'Provide `message` or non-empty `messages` array.' });
+    }
+
+    const modelName = DEFAULT_MODEL;
+    const model = getAiModel(modelName);
+
+    const sseUrl = process.env.MCP_SSE_URL || `http://127.0.0.1:${PORT}/sse`;
+    const { client: mcp } = await connectMcpClient(sseUrl);
+
+    try {
+      const mcpTools = await listMcpTools(mcp);
+      if (!mcpTools.length) {
+        return res.status(500).json({ error: 'No MCP tools available' });
+      }
+
+      const toolLogs = [];
+      const tools = Object.fromEntries(
+        mcpTools.map((t) => {
+          const params = jsonSchemaToZod(t.inputSchema);
+          return [
+            t.name,
+            aiTool({
+              description: t.description || '',
+              parameters: params,
+              execute: async (args) => {
+                const { text } = await callMcpTool(mcp, t.name, args);
+                toolLogs.push({ name: t.name, args, output: text });
+                return text;
+              },
+            }),
+          ];
+        })
+      );
+
+      if (doStream) {
+        // SSE streaming of assistant text
+        const stream = await streamText({ model, tools, messages, maxSteps: 5 });
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        // eslint-disable-next-line no-unused-expressions
+        res.flushHeaders && res.flushHeaders();
+        try {
+          for await (const chunk of stream.textStream) {
+            res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
+          }
+          res.write('event: end\ndata: {}\n\n');
+          res.end();
+        } catch (err) {
+          console.error('chat-ai stream error:', err);
+          try { res.end(); } catch (_) { /* noop */ }
+        } finally {
+          await mcp.close();
+        }
+        return;
+      }
+
+      const result = await generateText({ model, tools, messages, maxSteps: 5 });
+      return res.json({ role: 'assistant', content: result.text || '', model: modelName, toolLogs });
+    } finally {
+      if (mcp && mcp.close) await mcp.close();
+    }
+  } catch (e) {
+    console.error('Chat-AI error:', e);
+    return res.status(500).json({ error: 'chat_ai_failed', detail: String(e) });
+  }
+});
+
+// Dedicated streaming endpoint using Vercel AI SDK
+app.post('/api/chat-ai-stream', async (req, res) => {
+  try {
+    const body = req.body || {};
+    let { message, messages } = body;
+    if (!messages && typeof message === 'string' && message.trim()) {
+      messages = [{ role: 'user', content: message.trim() }];
+    }
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ error: 'Provide `message` or non-empty `messages` array.' });
+    }
+
+    const modelName = DEFAULT_MODEL;
+    const model = getAiModel(modelName);
+
+    const sseUrl = process.env.MCP_SSE_URL || `http://127.0.0.1:${PORT}/sse`;
+    const { client: mcp } = await connectMcpClient(sseUrl);
+
+    try {
+      const mcpTools = await listMcpTools(mcp);
+      const tools = Object.fromEntries(
+        mcpTools.map((t) => {
+          const params = jsonSchemaToZod(t.inputSchema);
+          return [
+            t.name,
+            aiTool({
+              description: t.description || '',
+              parameters: params,
+              execute: async (args) => {
+                const { text } = await callMcpTool(mcp, t.name, args);
+                return text;
+              },
+            }),
+          ];
+        })
+      );
+
+      const stream = await streamText({ model, tools, messages, maxSteps: 5 });
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      // eslint-disable-next-line no-unused-expressions
+      res.flushHeaders && res.flushHeaders();
+      try {
+        for await (const chunk of stream.textStream) {
+          res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
+        }
+        res.write('event: end\ndata: {}\n\n');
+        res.end();
+      } catch (err) {
+        console.error('chat-ai-stream error:', err);
+        try { res.end(); } catch (_) { /* noop */ }
+      } finally {
+        await mcp.close();
+      }
+    } catch (e) {
+      console.error('chat-ai-stream inner error:', e);
+      try { await mcp.close(); } catch (_) { /* noop */ }
+      return res.status(500).json({ error: 'chat_ai_stream_failed', detail: String(e) });
+    }
+  } catch (e) {
+    console.error('chat-ai-stream error:', e);
+    return res.status(500).json({ error: 'chat_ai_stream_failed', detail: String(e) });
   }
 });
 

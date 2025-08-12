@@ -99,7 +99,11 @@ export default function App() {
     setChatMessages(next)
     setChatInput('')
     try {
-      const r = await fetch('/api/chat', {
+      // Available endpoints: 
+      // /api/chat: explicit flow talking to MCP
+      // /api/chat-ai: use AI SDK to talk to MCP
+      // /api/chat-ai-stream: use AI SDK to talk to MCP and stream the response
+      const r = await fetch('/api/chat-ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: next })

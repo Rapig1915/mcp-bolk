@@ -72,6 +72,44 @@ How it works:
 - For each tool call, the server calls MCP and feeds results back to the model.
 - The final assistant message is returned as a single JSON response.
 
+## AI SDK Chat Endpoints (Vercel AI SDK)
+In addition to the baseline `/api/chat`, there are AI SDK-powered endpoints that simplify multi-step tool calls and support streaming.
+
+- `POST /api/chat-ai` (non-stream by default; stream with toggle)
+  - Request body: `{ "message": string }` or `{ "messages": [...] }`
+  - Query/header toggle for streaming:
+    - `?stream=1` or header `x-stream: 1`
+  - Non-stream response: `{ role: 'assistant', content: string, model: string, toolLogs?: Array }`
+  - Streaming response (SSE): emits `data: {"text":"..."}` chunks and an `end` event.
+
+Examples:
+```bash
+# Non-stream
+curl -X POST http://localhost:4444/api/chat-ai \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"Store 11 with description demo, then sum last 7 days"}'
+
+# Stream (toggle via query)
+curl -N -X POST 'http://localhost:4444/api/chat-ai?stream=1' \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"sum last 24 hours"}'
+```
+
+- `POST /api/chat-ai-stream` (always streaming)
+  - Request body: `{ "message": string }` or `{ "messages": [...] }`
+  - Streaming response (SSE): emits `data: {"text":"..."}` chunks and an `end` event.
+
+Example:
+```bash
+curl -N -X POST http://localhost:4444/api/chat-ai-stream \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"Write a haiku and then call sum for last hour"}'
+```
+
+Why keep both?
+- `/api/chat` shows the explicit tool-call loop for learning/debugging.
+- `/api/chat-ai` and `/api/chat-ai-stream` use the AI SDK for concise orchestration and easy streaming.
+
 ## MCP (Model Context Protocol)
 - Transport: HTTP + SSE
 - Connect endpoint (GET): `http://localhost:4444/sse`
@@ -139,7 +177,7 @@ server {
   # ssl_certificate ...;
   # ssl_certificate_key ...;
 
-  # API and UI
+  # API and UI (default)
   location / {
     proxy_pass http://127.0.0.1:4444;
     proxy_http_version 1.1;
@@ -148,7 +186,7 @@ server {
     proxy_set_header X-Forwarded-Proto $scheme;
   }
 
-  # SSE endpoint (critical options)
+  # SSE endpoints (critical options)
   location /sse {
     proxy_http_version 1.1;
     proxy_set_header Connection "";
@@ -159,16 +197,38 @@ server {
     proxy_pass http://127.0.0.1:4444/sse;
   }
 
-  # Messages endpoint for MCP
   location /messages {
     proxy_pass http://127.0.0.1:4444/messages;
     proxy_http_version 1.1;
+  }
+
+  # Streaming chat endpoints (SSE responses)
+  location /api/chat-ai-stream {
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_buffering off;
+    chunked_transfer_encoding off;
+    proxy_read_timeout 3600s;
+    add_header Cache-Control "no-cache";
+    proxy_pass http://127.0.0.1:4444/api/chat-ai-stream;
+  }
+
+  # Optional: same for /api/chat-ai when toggling ?stream=1
+  location /api/chat-ai {
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_buffering off;
+    chunked_transfer_encoding off;
+    proxy_read_timeout 3600s;
+    add_header Cache-Control "no-cache";
+    proxy_pass http://127.0.0.1:4444/api/chat-ai;
   }
 }
 ```
 
 Notes:
-- Disable proxy buffering for SSE and keep long read timeouts.
+- Disable proxy buffering for all endpoints that stream `text/event-stream` (SSE).
+- Keep long read timeouts for streaming.
 - Prefer header-based auth for `/sse` (`Authorization: Bearer ...`), but query param is also supported.
 
 ## Local vs Production quick start
@@ -213,7 +273,7 @@ You can point Cursor to this MCP server via SSE.
   package.json
   server/
     package.json
-    index.js           # Express server, SQLite, REST, MCP SSE, /api/chat
+    index.js           # Express server, SQLite, REST, MCP SSE, /api/chat, /api/chat-ai, /api/chat-ai-stream
   web/
     package.json
     vite.config.js     # Proxy to server during dev
